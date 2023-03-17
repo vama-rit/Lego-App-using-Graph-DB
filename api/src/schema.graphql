@@ -1,0 +1,188 @@
+type Item {
+  inum: ID!
+  name: String!
+  iyear: Year @relationship(type: "RELEASED_IN", direction: OUT)
+  itheme: [legoTheme] @relationship(type: "HAS_THEME", direction: OUT)
+  ipc: Int
+  imin: Int
+  iurl: String
+  igbp: Float
+  iusd: Float
+  icad: Float
+  ieur: Float
+  set: Set @relationship(type: "HAS_INFO", direction: IN)
+}
+
+type legoTheme {
+  name: String!
+  legoSubThemes: [legoSubTheme]
+    @relationship(type: "HAS_PARENT_THEME", direction: IN)
+  items: [Item] @relationship(type: "HAS_THEME", direction: IN)
+  sets: [Set] @relationship(type: "HAS_THEME", direction: IN)
+}
+
+type legoSubTheme {
+  subtheme: String!
+  themes: legoTheme @relationship(type: "HAS_PARENT_THEME", direction: OUT)
+}
+
+type Year {
+  name: String!
+  items: [Item] @relationship(type: "RELEASED_IN", direction: IN)
+  theme: [[String!]]
+    @cypher(
+      statement: "MATCH (t:legoTheme)-[:HAS_THEME]-(i:Item)-[:RELEASED_IN]-(this) WITH t.name as theme, COUNT(t.name) as count, avg(toInteger(i.iusd)) as usd ORDER BY count desc RETURN collect(theme)[0..5] as themes"
+    )
+  themeCount: [[Int]]
+    @cypher(
+      statement: "MATCH (t:legoTheme)-[:HAS_THEME]-(i:Item)-[:RELEASED_IN]-(this) WITH t.name as theme, COUNT(t.name) as count ORDER BY count desc RETURN collect(count)[0..5] as countofthemes"
+    )
+  themes: String
+    @cypher(
+      statement: "MATCH (t:legoTheme)-[:HAS_THEME]-(i:Item)-[:RELEASED_IN]-(this) RETURN t.name"
+    )
+  itemcount: Int
+    @cypher(
+      statement: "MATCH (this)-[:RELEASED_IN]-(i:Item) RETURN COUNT(i.name)"
+    )
+}
+
+type Set {
+  name: String!
+  num_parts: Int
+  set_num: String
+  year: Int
+  themes: [Theme] @relationship(type: "HAS_THEME", direction: OUT)
+  inventories: [Inventory] @relationship(type: "INVENTORY_FOR", direction: IN)
+  item: Item @relationship(type: "HAS_INFO", direction: OUT)
+  legothemes: [legoTheme] @relationship(type: "HAS_THEME", direction: OUT)
+}
+
+type Color {
+  name: String!
+  id: Int
+  rgb: String
+  is_trans: String
+  inventoryparts: [InventoryPart]
+    @relationship(type: "HAS_COLOR", direction: IN)
+}
+
+type Inventory {
+  version: Int
+  id: Int
+  inventoryparts: [InventoryPart]
+    @relationship(type: "ASSOCIATED_INVENTORY", direction: IN)
+  set: Set @relationship(type: "INVENTORY_FOR", direction: OUT)
+}
+
+type InventoryPart {
+  part_num: String
+  quantity: Int
+  color_id: Int
+  inventory_id: Int
+  is_spare: Boolean
+  color: Color @relationship(type: "HAS_COLOR", direction: OUT)
+  inventory: Inventory
+    @relationship(type: "ASSOCIATED_INVENTORY", direction: OUT)
+  part: Part @relationship(type: "FOR_PART", direction: OUT)
+}
+
+type Part {
+  name: String
+  part_num: String
+  partcategory: PartCategory
+    @relationship(type: "HAS_PART_CATEGORY", direction: OUT)
+  inventoryparts: [InventoryPart] @relationship(type: "FOR_PART", direction: IN)
+}
+
+type PartCategory {
+  name: String!
+  id: Int
+  parts: [Part] @relationship(type: "HAS_PART_CATEGORY", direction: IN)
+}
+
+type Theme {
+  name: String
+  id: Int!
+  items: [Item] @relationship(type: "HAS_THEME", direction: IN)
+  sets: [Set] @relationship(type: "HAS_THEME", direction: IN)
+}
+
+type SetCount {
+  name: String!
+  count: Int!
+}
+
+type PartCount {
+  name: String!
+  count: Int!
+  distinctCount: Int!
+}
+
+type MostUsedPart {
+  theme: String!
+  mostUsed: String!
+}
+
+type MostUsedColor {
+  theme: String!
+  mostUsed: String!
+}
+
+type ThemeCost {
+  theme: String
+  year: Int
+  usd: Float
+}
+
+type louvainAlgo {
+  name: String
+  communityId: Int
+  intermediateCommunityIds: [Int]
+  nodeId: Int
+}
+
+type nodeSimAlgo {
+  sourceNode: String
+  similarity: Float
+  targetNode: String
+}
+
+type Query {
+  setCount: [SetCount]
+    @cypher(
+      statement: "MATCH (s:Set)-[:HAS_THEME]-(t:Theme) WHERE s.year>2010 WITH COUNT(s) as count, t.name as name ORDER BY count desc LIMIT 10 RETURN {name: name, count: count}"
+    )
+  partCount: [PartCount]
+    @cypher(
+      statement: "MATCH (p:Part)-[:FOR_PART]-(ip: InventoryPart)-[:ASSOCIATED_INVENTORY]-(i:Inventory)-[:INVENTORY_FOR]-(s:Set)-[:HAS_THEME]-(t:Theme) WHERE s.year>2010 WITH t.name as theme, COUNT(p.name) as count, COUNT(DISTINCT(p.name)) as dist ORDER BY count desc RETURN {name:theme, count:count, distinctCount:dist} LIMIT 10"
+    )
+  mostUsedPart: [MostUsedPart]
+    @cypher(
+      statement: "MATCH (p:Part)-[:FOR_PART]-(InventoryPart)-[:ASSOCIATED_INVENTORY]-(Inventory)-[:INVENTORY_FOR]-(Item)-[:HAS_THEME]-(legoTheme) WITH legoTheme.name as theme, COUNT(p.name) as partused, p ORDER BY theme, partused DESC RETURN {theme: theme, mostUsed: collect(p.name)[0]} LIMIT 10"
+    )
+  mostUsedColor: [MostUsedColor]
+    @cypher(
+      statement: "MATCH (c:Color)-[:HAS_COLOR]-(InventoryPart)-[:ASSOCIATED_INVENTORY]-(Inventory)-[:INVENTORY_FOR]-(Item)-[:HAS_THEME]-(legoTheme) WITH legoTheme.name as theme, COUNT(c.name) as colorused, c ORDER BY theme, colorused DESC RETURN {theme: theme, mostUsed: collect(c.name)[0]} LIMIT 10"
+    )
+  mostUsedPartAll: String!
+    @cypher(
+      statement: "MATCH (p:Part)-[:FOR_PART]-(InventoryPart)-[:ASSOCIATED_INVENTORY]-(Inventory)-[:INVENTORY_FOR]-(Item)-[:HAS_THEME]-(legoTheme) WITH legoTheme.name as theme, COUNT(p.name) AS partused, p ORDER BY theme, partused DESC WITH theme, collect(p.name)[0] AS partinall RETURN partinall, COUNT(partinall) AS total ORDER BY total DESC"
+    )
+  mostUsedColorAll: String!
+    @cypher(
+      statement: "MATCH (c:Color)-[:HAS_COLOR]-(InventoryPart)-[:ASSOCIATED_INVENTORY]-(Inventory)-[:INVENTORY_FOR]-(Item)-[:HAS_THEME]-(legoTheme) WITH legoTheme.name as theme, COUNT(c.name) AS colorused, c ORDER BY theme, colorused DESC WITH theme, collect(c.name)[0] AS colorinall RETURN colorinall, COUNT(colorinall) AS total ORDER BY total DESC"
+    )
+  themeCost(name: [String]): [ThemeCost]
+    @cypher(
+      statement: "MATCH (i:Item)-[:HAS_THEME]-(t:legoTheme) WHERE i.itheme IN $name WITH DISTINCT i.itheme AS theme, i, i.iyear as year ORDER BY theme, year ASC RETURN {theme: theme, year: year, usd: avg(toInteger(i.iusd))}"
+    )
+  louvain: [louvainAlgo]
+    @cypher(
+      statement: "CALL gds.louvain.stream({ nodeQuery: 'MATCH (z:Theme) RETURN id(z) AS id', relationshipQuery: 'MATCH (i:Theme)--(t:Theme) RETURN id(i) AS source, id(t) AS target ORDER BY source ASC', includeIntermediateCommunities:true}) YIELD nodeId, communityId, intermediateCommunityIds RETURN {name: gds.util.asNode(nodeId).name, communityId: communityId, intermediateCommunityIds: intermediateCommunityIds, nodeId: nodeId} LIMIT 20"
+    )
+  nodesim: [nodeSimAlgo]
+    @cypher(
+      statement: "CALL gds.nodeSimilarity.stream({ nodeQuery: 'MATCH (z:Theme) RETURN id(z) AS id', relationshipQuery: 'MATCH (i:Theme)--(t:Theme) RETURN id(i) AS source, id(t) AS target', topK:1}) YIELD node1, node2, similarity RETURN {sourceNode: gds.util.asNode(node1).name, similarity: similarity, targetNode: gds.util.asNode(node2).name} LIMIT 30"
+    )
+}
